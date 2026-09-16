@@ -62,8 +62,18 @@ export function escapePercent(value) {
 const PHP = ['php', '-d', 'display_startup_errors=0', '-d', 'display_errors=stderr'];
 
 async function inService(ctx, service, argv) {
-  const { stdout } = await execIn(ctx, service, argv);
-  return stdout;
+  try {
+    const { stdout } = await execIn(ctx, service, argv);
+    return stdout;
+  } catch (err) {
+    // Console commands put the actual complaint on STDOUT; stderr is often only a PHP startup warning.
+    const e = /** @type {any} */ (err);
+    const detail = [e.stdout, e.stderr]
+      .map((x) => String(x || '').split('\n').filter((l) => l.trim() && !/PHP Startup/.test(l)).slice(-8).join('\n'))
+      .filter(Boolean)
+      .join('\n');
+    throw new Error(`${argv.slice(0, 5).join(' ')} … failed${detail ? `:\n${detail}` : ''}`);
+  }
 }
 
 /**
@@ -114,7 +124,14 @@ async function writeParameters(ctx, updates) {
  * same config volume but keep their own caches.
  */
 async function rebuildCache(ctx, log) {
-  for (const service of /** @type {const} */ (['mautic', 'mautic_cron'])) {
+  // One container serving both roles (MAUTIC_CONTAINER == MAUTIC_CRON_CONTAINER, or MAUTIC_EXEC=local)
+  // is cleared ONCE: a second clear right after the first races whatever is rebuilding the cache and
+  // fails on a file that just reappeared.
+  const env = ctx.env;
+  const shared =
+    env.MAUTIC_EXEC === 'local' || (env.MAUTIC_CONTAINER && env.MAUTIC_CONTAINER === env.MAUTIC_CRON_CONTAINER);
+  const services = /** @type {const} */ (shared ? ['mautic'] : ['mautic', 'mautic_cron']);
+  for (const service of services) {
     await inService(ctx, service, [...PHP, '/var/www/html/bin/console', 'cache:clear', '--no-warmup']);
     log(`~ cache cleared (${service})`);
   }

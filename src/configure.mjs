@@ -101,7 +101,9 @@ async function writeParameters(ctx, updates) {
     `include '${CONFIG_PATH}';`,
     `$u = json_decode(base64_decode('${payload}'), true);`,
     '$p = array_merge($parameters, $u);',
-    `file_put_contents('${CONFIG_PATH}', "<?php\\n\\$parameters = " . var_export($p, true) . ";\\n");`,
+    // file_put_contents returns false (a warning, exit 0) when local.php is not writable — e.g. owned
+    // by root while this runs as www-data. Fail loudly instead of reporting a change that never landed.
+    `if (file_put_contents('${CONFIG_PATH}', "<?php\\n\\$parameters = " . var_export($p, true) . ";\\n") === false) { fwrite(STDERR, "cannot write ${CONFIG_PATH} (owner/permissions?)\\n"); exit(1); }`,
   ].join('');
   await inService(ctx, 'mautic', [...PHP, '-r', php]);
 }
@@ -162,7 +164,8 @@ export async function configure(ctx) {
     const show = (v) => {
       if (secret && v) return '"<redacted>"';
       if (typeof v === 'string' && /:\/\/[^/\s]*@/.test(v)) {
-        return JSON.stringify(v.replace(/(:\/\/[^:/@\s]*:)[^@\s]*@/, '$1<redacted>@'));
+        // Greedy to the LAST `@`: a password may itself contain an unencoded `@`.
+        return JSON.stringify(v.replace(/(:\/\/[^:/@\s]*:)\S*@/, '$1<redacted>@'));
       }
       return JSON.stringify(v);
     };
@@ -171,6 +174,10 @@ export async function configure(ctx) {
   if (checkOnly) return keys.length;
 
   await writeParameters(ctx, Object.fromEntries(keys.map((k) => [k, escapePercent(parameters[k])])));
+  // Re-read: the write is only real if the file now says so.
+  const after = await readParameters(ctx);
+  const missed = keys.filter((k) => JSON.stringify(after[k]) !== JSON.stringify(escapePercent(parameters[k])));
+  if (missed.length) throw new Error(`local.php still differs after writing: ${missed.join(', ')}`);
   await rebuildCache(ctx, log);
   log('done');
   return keys.length;

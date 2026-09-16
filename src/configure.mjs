@@ -145,7 +145,7 @@ export async function configure(ctx) {
     const same = Array.isArray(want)
       ? JSON.stringify(live[key] ?? []) === JSON.stringify(escapePercent(want))
       : scalar(live[key]) === scalar(escapePercent(want));
-    if (!same) drift[key] = { from: live[key] ?? null, to: want };
+    if (!same) drift[key] = { from: live[key] ?? null, to: escapePercent(want) };
   }
 
   const keys = Object.keys(drift);

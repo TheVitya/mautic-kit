@@ -43,6 +43,18 @@ export function baseParameters(env) {
 const CONFIG_PATH = '/var/www/html/config/local.php';
 
 /**
+ * local.php values are Symfony container parameters, where `%name%` is a REFERENCE and a literal `%`
+ * must be written `%%` — Mautic's own config UI stores a DSN user as `viktor%%40example.com`.
+ * Declarations are written the way a human writes a URL (`%40`); written raw, `%40…%` would be read
+ * as a parameter reference and break every page and console command. So: escape on compare and write.
+ */
+export function escapePercent(value) {
+  if (typeof value === 'string') return value.replace(/%/g, '%%');
+  if (Array.isArray(value)) return value.map(escapePercent);
+  return value;
+}
+
+/**
  * `php` with warnings on STDERR. A container whose php.ini names a missing extension prints
  * "Warning: PHP Startup: Unable to load dynamic library …" on stdout before anything else, and the
  * JSON read below then fails to parse — on a perfectly healthy instance.
@@ -131,8 +143,8 @@ export async function configure(ctx) {
     // Booleans too: a UI-saved local.php holds `true` where the declaration says 1.
     const scalar = (v) => (v === true ? '1' : v === false ? '0' : String(v ?? ''));
     const same = Array.isArray(want)
-      ? JSON.stringify(live[key] ?? []) === JSON.stringify(want)
-      : scalar(live[key]) === scalar(want);
+      ? JSON.stringify(live[key] ?? []) === JSON.stringify(escapePercent(want))
+      : scalar(live[key]) === scalar(escapePercent(want));
     if (!same) drift[key] = { from: live[key] ?? null, to: want };
   }
 
@@ -158,7 +170,7 @@ export async function configure(ctx) {
   }
   if (checkOnly) return keys.length;
 
-  await writeParameters(ctx, Object.fromEntries(keys.map((k) => [k, parameters[k]])));
+  await writeParameters(ctx, Object.fromEntries(keys.map((k) => [k, escapePercent(parameters[k])])));
   await rebuildCache(ctx, log);
   log('done');
   return keys.length;

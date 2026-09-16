@@ -10,6 +10,7 @@ import { createServer } from 'node:http';
 import { test } from 'node:test';
 import { dockerArgv, shellQuote } from '../src/docker.mjs';
 import { provision } from '../src/provision.mjs';
+import { escapePercent } from '../src/configure.mjs';
 
 function fakeMautic() {
   const store = { fields: [], tags: [], lists: [], pages: [], emails: [], campaigns: [], hooks: [], categories: [], stages: [], forms: [], assets: [] };
@@ -369,4 +370,11 @@ test('shellQuote survives the php -r code configure sends', async () => {
   const words = ['php', '-r', `include '/x/local.php'; echo json_encode($parameters); $a = "b";`, 'it\'s', 'plain'];
   const out = execFileSync('bash', ['-c', `printf '%s\\n' ${words.map(shellQuote).join(' ')}`], { encoding: 'utf8' });
   assert.deepEqual(out.trimEnd().split('\n'), words);
+});
+
+test('escapePercent doubles % the way Mautic stores DSNs in local.php', () => {
+  assert.equal(escapePercent('smtp://viktor%40example.com:p%25w@mail:587'), 'smtp://viktor%%40example.com:p%%25w@mail:587');
+  assert.equal(escapePercent('sync://'), 'sync://');
+  assert.equal(escapePercent(1), 1);
+  assert.deepEqual(escapePercent(['a%b']), ['a%%b']);
 });

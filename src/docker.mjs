@@ -52,9 +52,12 @@ export function dockerArgv(ctx, service, argv) {
       'No way to reach the Mautic console: set MAUTIC_CONTAINER + MAUTIC_CRON_CONTAINER, MAUTIC_EXEC=local, or pass composeFiles in the brand config.'
     );
   }
+  // `-T` (no TTY) is a `docker compose exec` flag; plain `docker exec` / `podman exec` reject it and
+  // allocate no TTY by default anyway. Passing it there made every named-container call fail with a
+  // usage message — the managed-host mode never worked until this split.
+  if (container) return ['exec', '-u', 'www-data', container, ...argv];
   const compose = composeFiles.flatMap((f) => ['-f', f]);
-  const head = container ? ['exec'] : ['compose', ...compose, 'exec'];
-  return [...head, '-T', '-u', 'www-data', container || service, ...argv];
+  return ['compose', ...compose, 'exec', '-T', '-u', 'www-data', service, ...argv];
 }
 
 /**

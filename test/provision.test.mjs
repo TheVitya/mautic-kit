@@ -212,7 +212,7 @@ test('dockerArgv: containers, compose files, podman-free defaults, and the both-
   );
   assert.deepEqual(
     dockerArgv({ env: { MAUTIC_CONTAINER: 'web', MAUTIC_CRON_CONTAINER: 'cron' } }, 'mautic_cron', ['x']),
-    ['exec', '-T', '-u', 'www-data', 'cron', 'x']
+    ['exec', '-u', 'www-data', 'cron', 'x']
   );
   assert.throws(() => dockerArgv({ env: { MAUTIC_CONTAINER: 'web' } }, 'mautic', []), /BOTH/);
   assert.throws(() => dockerArgv({ env: {} }, 'mautic', []), /No way to reach/);

@@ -128,9 +128,11 @@ export async function configure(ctx) {
     // Arrays are compared as JSON, not stringified: `String(['a','b'])` is `'a,b'`, which makes
     // `['a,b']` and `['a','b']` indistinguishable — and one of those is a hostname that does not
     // exist.
+    // Booleans too: a UI-saved local.php holds `true` where the declaration says 1.
+    const scalar = (v) => (v === true ? '1' : v === false ? '0' : String(v ?? ''));
     const same = Array.isArray(want)
       ? JSON.stringify(live[key] ?? []) === JSON.stringify(want)
-      : String(live[key] ?? '') === String(want);
+      : scalar(live[key]) === scalar(want);
     if (!same) drift[key] = { from: live[key] ?? null, to: want };
   }
 

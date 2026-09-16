@@ -42,6 +42,13 @@ export function baseParameters(env) {
 
 const CONFIG_PATH = '/var/www/html/config/local.php';
 
+/**
+ * `php` with warnings on STDERR. A container whose php.ini names a missing extension prints
+ * "Warning: PHP Startup: Unable to load dynamic library …" on stdout before anything else, and the
+ * JSON read below then fails to parse — on a perfectly healthy instance.
+ */
+const PHP = ['php', '-d', 'display_startup_errors=0', '-d', 'display_errors=stderr'];
+
 async function inService(ctx, service, argv) {
   const { stdout } = await execIn(ctx, service, argv);
   return stdout;
@@ -56,7 +63,7 @@ async function inService(ctx, service, argv) {
  */
 async function readParameters(ctx) {
   const out = await inService(ctx, 'mautic', [
-    'php',
+    ...PHP,
     '-r',
     `include '${CONFIG_PATH}'; echo json_encode($parameters);`,
   ]);
@@ -84,7 +91,7 @@ async function writeParameters(ctx, updates) {
     '$p = array_merge($parameters, $u);',
     `file_put_contents('${CONFIG_PATH}', "<?php\\n\\$parameters = " . var_export($p, true) . ";\\n");`,
   ].join('');
-  await inService(ctx, 'mautic', ['php', '-r', php]);
+  await inService(ctx, 'mautic', [...PHP, '-r', php]);
 }
 
 /**
@@ -94,7 +101,7 @@ async function writeParameters(ctx, updates) {
  */
 async function rebuildCache(ctx, log) {
   for (const service of /** @type {const} */ (['mautic', 'mautic_cron'])) {
-    await inService(ctx, service, ['php', '/var/www/html/bin/console', 'cache:clear', '--no-warmup']);
+    await inService(ctx, service, [...PHP, '/var/www/html/bin/console', 'cache:clear', '--no-warmup']);
     log(`~ cache cleared (${service})`);
   }
 }

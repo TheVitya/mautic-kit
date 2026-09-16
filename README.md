@@ -4,8 +4,11 @@ Install, configure and provision Mautic from per-brand declarations. Zero depend
 Node ≥ 20. The engine is shared; **what** each brand's Mautic holds lives in that brand's repo.
 
 Used by:
-- `TheVitya/banklens` (Dinarko) — `tools/mautic/mautic.config.mjs`
-- `TheVitya/okos-automatizalas` — planned (CUE → JSON declarations)
+- `TheVitya/banklens` (Dinarko) — `tools/mautic/declarations.mjs` + `mautic.config.mjs`
+- `TheVitya/okos-automatizalas` — CUE (`mautic/cue`) → `data/declarations.json` + `mautic/mautic.config.mjs`
+
+Targets **Mautic 7** (verified against `mautic/mautic:7.0.0-apache`: install, configure, provision,
+idempotent re-provision, a real send).
 
 ## Steps
 
@@ -13,7 +16,8 @@ Used by:
 |---|---|---|
 | `install` | schema, admin user, `local.php` — **DESTRUCTIVE with `--force`**; refuses an instance that answers or can't be reached | console in the container |
 | `configure` | `local.php` parameters with no REST API (API on, mailer DSN, site_url) — drift-checked | console in the container |
-| `provision` | fields, tag, segments, pages, emails (+ translations), campaigns, webhooks — reconciled by alias/name | REST, Basic auth |
+| `provision` | fields, categories, tags, stages, segments, forms, assets (lookup), pages, emails (+ translations), campaigns, webhooks — reconciled by alias/name | REST, Basic auth |
+| `validate` | offline: every `{global|asset|form|page:…}` token resolves | no Mautic |
 
 `--check` on `configure`/`provision` reports drift and changes nothing (exit 1 on drift).
 
@@ -35,6 +39,21 @@ export default {
 
 Run it with `npx mautic-kit provision --config ./mautic.config.mjs [--check]`, or import `run()`.
 
+## Authoring in CUE
+
+`cue/schema` is the CUE twin of `src/types.d.mts`: `schema.#Declarations` checks every
+cross-reference at `cue vet` time (email/segment/form/stage/tag names in campaigns, event trees,
+category bundles, unique event ids and names) with errors that name the campaign and event.
+A brand links it into its module and exports JSON the engine takes as-is:
+
+```sh
+ln -sfn node_modules/mautic-kit/cue/schema cue/cue.mod/pkg/github.com/thevitya/mautic-kit/schema  # a DIRECTORY link
+cue vet -c ./cue && cue export ./cue -e declarations > data/declarations.json
+```
+
+In JSON declarations `segments` is an array and `tags` filters name tags (resolved to ids);
+brands also set `emailDefaults` (sender, language), `footerLabels` and `emailStyles`.
+
 ## Environment
 
 `MAUTIC_PROVISION_URL` (how *this machine* reaches Mautic) · `MAUTIC_API_USERNAME` /
@@ -44,13 +63,17 @@ image) · `MAUTIC_DOCKER=podman` · `MAUTIC_WEBHOOK_TOKEN`.
 
 ## Known traps (read before pointing at a live instance)
 
-- **Campaigns are replaced with PUT** (PATCH appends events and duplicates sends). A PUT replaces
-  the event list; verify against a copy of the database before provisioning a campaign that has
-  contacts mid-flight.
+- **Campaigns are updated with PUT** (PATCH appends events and duplicates sends). Existing events
+  are matched by NAME and sent under their live ids, so contacts mid-campaign keep their progress —
+  verified on Mautic 7 (a declared id like `new_send_2` would delete and recreate the row). Renaming
+  an event therefore REMOVES the old one; `--check` prints `removes event(s)`.
+- An existing form's **fields are never rewritten** (the results table is keyed by field alias);
+  field differences are reported as drift.
 - A field whose type changed is **deleted and recreated** — its values are lost; the brand's
   `resyncHint` says how to backfill.
-- Targets **Mautic 5** today; Mautic 7 support is the next milestone.
+- Mautic 7 has **no `mautic:emails:send`** console command; cron jobs calling it fail every run.
 
 ## Tests
 
-`npm test` — renderer tests and engine tests against an in-memory fake of Mautic's REST API.
+`npm test` — renderer, engine (against an in-memory fake of Mautic's REST API) and CUE schema
+tests (needs `cue` on PATH, skipped otherwise).

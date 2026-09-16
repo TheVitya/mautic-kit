@@ -53,6 +53,11 @@ export async function instanceState(ctx) {
       redirect: 'manual',
       signal: AbortSignal.timeout(5000),
     });
+    // Mautic 5 answers an uninstalled /s/login with a 500; Mautic 7 REDIRECTS it to the web
+    // installer instead. Read as "< 500 means installed", a fresh 7 looks installed, and
+    // `--if-needed` then skips the install on every boot while reporting success.
+    const location = res.headers.get('location') || '';
+    if (res.status >= 300 && res.status < 400 && /\/installer\b/.test(location)) return 'fresh';
     return res.status < 500 ? 'installed' : 'fresh';
   } catch {
     return 'unreachable';

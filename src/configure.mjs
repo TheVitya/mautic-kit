@@ -135,8 +135,16 @@ export async function configure(ctx) {
 
   for (const k of keys) {
     // A DSN carries the relay password; the key names what drifted without printing the secret.
-    const secret = /dsn|password|secret/i.test(k);
-    const show = (v) => (secret && v ? '"<redacted>"' : JSON.stringify(v));
+    // Only values that can carry one are hidden: `sync://` is a DSN with nothing to leak, and
+    // redacting it would hide exactly the drift (queue vs inline) someone is looking for.
+    const secret = /password|secret|token/i.test(k);
+    const show = (v) => {
+      if (secret && v) return '"<redacted>"';
+      if (typeof v === 'string' && /:\/\/[^/\s]*@/.test(v)) {
+        return JSON.stringify(v.replace(/(:\/\/[^:/@\s]*:)[^@\s]*@/, '$1<redacted>@'));
+      }
+      return JSON.stringify(v);
+    };
     log(`${checkOnly ? 'DRIFT' : '~'} ${k}: ${show(drift[k].from)} -> ${show(drift[k].to)}`);
   }
   if (checkOnly) return keys.length;

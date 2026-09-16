@@ -57,14 +57,17 @@ const BTN_STYLE =
 
 const LINK_STYLE = 'color:#2563eb; text-decoration:underline;';
 
-/** An HTML call-to-action button. Inline styles only — every `<style>` block is stripped somewhere. */
-function button(href, text) {
-  return `<a href="${href}" style="${BTN_STYLE}">${text}</a>`;
+/**
+ * An HTML call-to-action button. Inline styles only — every `<style>` block is stripped somewhere.
+ * `styles.button` / `styles.link` are the brand's; the defaults are only a starting point.
+ */
+function button(href, text, styles) {
+  return `<a href="${href}" style="${styles?.button || BTN_STYLE}">${text}</a>`;
 }
 
 /** An inline text link. */
-function link(href, text) {
-  return `<a href="${href}" style="${LINK_STYLE}">${text}</a>`;
+function link(href, text, styles) {
+  return `<a href="${href}" style="${styles?.link || LINK_STYLE}">${text}</a>`;
 }
 
 /**
@@ -97,7 +100,10 @@ function splitRef(content) {
  * link silently vanishing from an email reads as a copy decision, while `{global:typo}` sitting in
  * the body is unmistakable — and `checkTokens` below is what stops either from being sent at all.
  */
-export function resolveTokens(text, { globals = {}, assetIds = {}, pageIds = {}, plain = false } = {}) {
+export function resolveTokens(
+  text,
+  { globals = {}, assetIds = {}, pageIds = {}, plain = false, styles } = {}
+) {
   return String(text).replace(MAUTIC_TOKEN_RE, (token) => {
     if (token.startsWith('{global:')) {
       const { name, display, inline } = splitRef(token.slice(8, -1));
@@ -105,7 +111,7 @@ export function resolveTokens(text, { globals = {}, assetIds = {}, pageIds = {},
       if (url == null) return token;
       if (!display) return url;
       if (plain) return `${display} (${url})`;
-      return inline ? link(url, display) : button(url, display);
+      return inline ? link(url, display, styles) : button(url, display, styles);
     }
 
     if (token.startsWith('{asset:')) {
@@ -117,7 +123,7 @@ export function resolveTokens(text, { globals = {}, assetIds = {}, pageIds = {},
       const href = `{assetlink=${id}}`;
       if (!display) return href;
       if (plain) return `${display} (${href})`;
-      return inline ? link(href, display) : button(href, display);
+      return inline ? link(href, display, styles) : button(href, display, styles);
     }
 
     if (token.startsWith('{page:')) {
@@ -130,7 +136,7 @@ export function resolveTokens(text, { globals = {}, assetIds = {}, pageIds = {},
       const href = `{pagelink=${id}}`;
       if (!display) return href;
       if (plain) return `${display} (${href})`;
-      return inline ? link(href, display) : button(href, display);
+      return inline ? link(href, display, styles) : button(href, display, styles);
     }
 
     // form:/contactfield/unsubscribe_url — Mautic's, resolved at send time.

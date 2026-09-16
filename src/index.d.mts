@@ -1,12 +1,18 @@
 // Public types for the JS entry point. Hand-written because consumers typecheck with `checkJs`, and
 // TypeScript does not read JSDoc out of a package's .mjs files (maxNodeModuleJsDepth is 0).
 import type {
+  MauticAsset,
   MauticCampaign,
+  MauticCategory,
   MauticEmail,
+  MauticEmailDefaults,
   MauticEmailTranslations,
   MauticField,
+  MauticForm,
   MauticPage,
   MauticSegment,
+  MauticStage,
+  MauticTag,
 } from './types.d.mts';
 
 export type Env = Record<string, string | undefined>;
@@ -25,7 +31,8 @@ export type Declarations = {
   fields?: MauticField[];
   /** The tag every subscriber carries; its id is passed to `segments`. Omit for no tag. */
   subscriberTag?: string;
-  segments?: (tagId: number | undefined) => MauticSegment[];
+  /** A function of the subscriber tag id (JS), or an array whose `tags` filters name tags (CUE/JSON). */
+  segments?: ((tagId: number | undefined) => MauticSegment[]) | MauticSegment[];
   pages?: MauticPage[];
   emails?: MauticEmail[];
   emailTranslations?: MauticEmailTranslations;
@@ -34,6 +41,15 @@ export type Declarations = {
   campaigns?: MauticCampaign[];
   webhooks?: MauticWebhook[];
   footerLabels?: { unsubscribe?: string; webview?: string };
+  categories?: MauticCategory[];
+  /** Tags beyond `subscriberTag`. */
+  tags?: MauticTag[];
+  stages?: MauticStage[];
+  forms?: MauticForm[];
+  assets?: MauticAsset[];
+  emailDefaults?: MauticEmailDefaults;
+  /** Inline CSS for `{token|Button}` and `{token||link}`; the kit's defaults otherwise. */
+  emailStyles?: { button?: string; link?: string };
 };
 
 export type BrandConfig = {
@@ -77,8 +93,9 @@ export function provision(
     webhookBaseUrl?: string;
   }
 ): Promise<number>;
+export function validate(declarations: Declarations): string[];
 export function run(
-  step: 'install' | 'configure' | 'provision',
+  step: 'install' | 'configure' | 'provision' | 'validate',
   config: BrandConfig,
   opts?: { argv?: string[]; configDir?: string }
 ): Promise<number>;
@@ -91,6 +108,7 @@ export type RenderOpts = {
   brandName?: string;
   brandUrl?: string;
   footerLabels?: { unsubscribe?: string; webview?: string };
+  styles?: { button?: string; link?: string };
 };
 export function renderEmail(
   email: { body: string; preview?: string; language?: string },

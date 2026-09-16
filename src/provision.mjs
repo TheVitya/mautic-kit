@@ -14,7 +14,7 @@
 
 import { httpBase } from './docker.mjs';
 import { renderEmail } from './html.mjs';
-import { checkTokens } from './tokens.mjs';
+import { checkTokens, resolveTokens } from './tokens.mjs';
 
 /**
  * Compares only what the declarations say. Mautic echoes back extra keys (`display`, nulls it
@@ -85,13 +85,22 @@ export async function provision(ctx) {
   const api = client(BASE, `Basic ${Buffer.from(`${USER}:${PASS}`).toString('base64')}`);
   const FIELDS = D.fields || [];
   const SUBSCRIBER_TAG = D.subscriberTag;
-  const SEGMENTS = D.segments || (() => []);
+  // A function (JS brands: tag id in, segments out) or a plain array (CUE/JSON brands), where a
+  // `tags` filter names TAGS and the ids are looked up here.
+  const SEGMENTS = typeof D.segments === 'function' ? D.segments : null;
+  const SEGMENT_LIST = Array.isArray(D.segments) ? D.segments : [];
   const PAGES = D.pages || [];
   const EMAILS = D.emails || [];
   const EMAIL_TRANSLATIONS = D.emailTranslations || {};
   const GLOBALS = D.globals || {};
   const CAMPAIGNS = D.campaigns || [];
   const WEBHOOKS = D.webhooks || [];
+  const CATEGORIES = D.categories || [];
+  const TAGS = D.tags || [];
+  const STAGES = D.stages || [];
+  const FORMS = D.forms || [];
+  const ASSETS = D.assets || [];
+  const EMAIL_DEFAULTS = D.emailDefaults || {};
   const RESYNC = ctx.resyncHint || 'backfill the field values';
 
 async function createField(f) {
@@ -196,6 +205,214 @@ async function ensureFields() {
   return drift;
 }
 
+/**
+ * Categories, matched by alias. Title and colour are reconciled; a category is never deleted —
+ * emails, forms and campaigns point at it, and Mautic nulls those references rather than refusing.
+ */
+async function ensureCategories() {
+  if (!CATEGORIES.length) return { ids: {}, drift: 0 };
+  const existing = await api('GET', '/api/categories?limit=500');
+  const live = new Map(Object.values(existing?.categories || {}).map((c) => [c.alias, c]));
+  /** @type {Record<string, number>} */
+  const ids = {};
+  let drift = 0;
+  for (const c of CATEGORIES) {
+    const payload = { title: c.title, alias: c.alias, bundle: c.bundle, color: c.color, isPublished: c.isPublished !== false };
+    const found = live.get(c.alias);
+    if (found) {
+      ids[c.alias] = found.id;
+      const same = found.title === c.title && String(found.color || '').replace('#', '') === String(c.color || '').replace('#', '') && found.bundle === c.bundle;
+      if (same) {
+        log(`= category ${c.alias}`);
+        continue;
+      }
+      drift++;
+      if (CHECK_ONLY) {
+        log(`DRIFT category ${c.alias} differs`);
+        continue;
+      }
+      await api('PATCH', `/api/categories/${found.id}/edit`, payload);
+      log(`~ category ${c.alias} updated`);
+      continue;
+    }
+    drift++;
+    if (CHECK_ONLY) {
+      log(`DRIFT category missing: ${c.alias}`);
+      continue;
+    }
+    const res = await api('POST', '/api/categories/new', payload);
+    ids[c.alias] = res?.category?.id;
+    log(`+ category ${c.alias} (${ids[c.alias]})`);
+  }
+  return { ids, drift };
+}
+
+/** Tags beyond the subscriber tag. Created if absent; a tag has nothing else to reconcile. */
+async function ensureTags() {
+  if (!TAGS.length) return 0;
+  const existing = await api('GET', '/api/tags?limit=500');
+  const live = new Set(Object.values(existing?.tags || {}).map((t) => t.tag));
+  let drift = 0;
+  for (const t of TAGS) {
+    if (live.has(t.tag)) {
+      log(`= tag ${t.tag}`);
+      continue;
+    }
+    drift++;
+    if (CHECK_ONLY) {
+      log(`DRIFT tag missing: ${t.tag}`);
+      continue;
+    }
+    await api('POST', '/api/tags/new', { tag: t.tag });
+    log(`+ tag ${t.tag}`);
+  }
+  return drift;
+}
+
+/** Stages, matched by name; weight and description reconciled. */
+async function ensureStages() {
+  if (!STAGES.length) return { ids: {}, drift: 0 };
+  const existing = await api('GET', '/api/stages?limit=500');
+  const live = new Map(Object.values(existing?.stages || {}).map((st) => [st.name, st]));
+  /** @type {Record<string, number>} */
+  const ids = {};
+  let drift = 0;
+  for (const st of STAGES) {
+    const payload = { name: st.name, weight: st.weight, description: st.description || '', isPublished: st.isPublished !== false };
+    const found = live.get(st.name);
+    if (found) {
+      ids[st.name] = found.id;
+      if (Number(found.weight) === Number(st.weight) && (found.description || '') === (st.description || '')) {
+        log(`= stage ${st.name}`);
+        continue;
+      }
+      drift++;
+      if (CHECK_ONLY) {
+        log(`DRIFT stage ${st.name} differs`);
+        continue;
+      }
+      await api('PATCH', `/api/stages/${found.id}/edit`, payload);
+      log(`~ stage ${st.name} updated`);
+      continue;
+    }
+    drift++;
+    if (CHECK_ONLY) {
+      log(`DRIFT stage missing: ${st.name}`);
+      continue;
+    }
+    const res = await api('POST', '/api/stages/new', payload);
+    ids[st.name] = res?.stage?.id;
+    log(`+ stage ${st.name} (${ids[st.name]})`);
+  }
+  return { ids, drift };
+}
+
+/**
+ * Forms, matched by alias. CREATED with their fields; an EXISTING form's fields are never rewritten.
+ *
+ * Mautic stores submissions in a per-form results table whose columns ARE the field aliases, and an
+ * edit that sends `fields` replaces them — a renamed or re-created field loses its column and the
+ * answers in it. So a field difference on a live form is reported, never applied: change it in the
+ * UI deliberately, or create a new form. Everything else about the form (name, redirect, category)
+ * is reconciled.
+ */
+async function ensureForms(categoryIds) {
+  if (!FORMS.length) return { ids: {}, drift: 0 };
+  const existing = await api('GET', '/api/forms?limit=500');
+  const live = new Map(Object.values(existing?.forms || {}).map((f) => [f.alias, f]));
+  /** @type {Record<string, number>} */
+  const ids = {};
+  let drift = 0;
+  for (const form of FORMS) {
+    const category = form.category == null ? undefined : needId('category', categoryIds, form.category, `form ${form.alias}`);
+    const { fields, actions, ...rest } = form;
+    const base = { ...rest, ...(category !== undefined ? { category } : {}) };
+    const found = live.get(form.alias);
+    if (!found) {
+      drift++;
+      if (CHECK_ONLY) {
+        log(`DRIFT form missing: ${form.alias}`);
+        continue;
+      }
+      const res = await api('POST', '/api/forms/new', { ...base, fields: fields || [], actions: actions || [] });
+      ids[form.alias] = res?.form?.id;
+      log(`+ form ${form.alias} (${ids[form.alias]})`);
+      continue;
+    }
+    ids[form.alias] = found.id;
+    const liveFields = Object.values(found.fields || {}).map((f) => `${f.alias}:${f.type}`).sort().join(',');
+    const wantFields = (fields || []).map((f) => `${f.alias}:${f.type}`).sort().join(',');
+    if (liveFields !== wantFields) {
+      drift++;
+      log(`${CHECK_ONLY ? 'DRIFT' : '!'} form ${form.alias} fields differ (live ${liveFields || 'none'} vs declared ${wantFields || 'none'}) — NOT applied; see ensureForms`);
+    }
+    if (!CHECK_ONLY) await api('PATCH', `/api/forms/${found.id}/edit`, base);
+    log(`= form ${form.alias}`);
+  }
+  return { ids, drift };
+}
+
+/**
+ * Assets are LOOKED UP by title, never created — files are uploaded in the UI. A missing asset is
+ * drift, and an `{asset:name}` token pointing at it stops the run in the token check.
+ */
+async function lookupAssets() {
+  if (!ASSETS.length) return { ids: {}, drift: 0 };
+  const existing = await api('GET', '/api/assets?limit=500');
+  const live = new Map(Object.values(existing?.assets || {}).map((a) => [a.title, a]));
+  /** @type {Record<string, number>} */
+  const ids = {};
+  let drift = 0;
+  for (const a of ASSETS) {
+    const found = live.get(a.title);
+    if (found) {
+      ids[a.name] = found.id;
+      log(`= asset ${a.name}`);
+    } else {
+      drift++;
+      log(`DRIFT asset missing (upload it in Mautic): ${a.title}`);
+    }
+  }
+  return { ids, drift };
+}
+
+/** A symbolic reference that must resolve, or the run stops — Mautic would accept a 0 silently. */
+function needId(kind, map, name, where) {
+  const id = map[name];
+  if (id != null) return id;
+  // Under --check nothing is created, so a DECLARED category that is not live yet has no id — it is
+  // already reported as drift above. Only a name nobody declared is an error in both modes.
+  const declared = kind === 'category' ? CATEGORIES.some((c) => c.alias === name) : false;
+  if (CHECK_ONLY && declared) return 0;
+  throw new Error(`${where}: no ${kind} "${name}"`);
+}
+
+/**
+ * Segments declared as data name tags in `tags` filters; Mautic wants ids. Under --check a tag that
+ * is declared but not live yet resolves to 0 (already reported); an undeclared one is an error.
+ */
+async function resolveTagFilters(segments) {
+  const usesTags = segments.some((sg) => (sg.filters || []).some((f) => f.type === 'tags'));
+  if (!usesTags) return segments;
+  const existing = await api('GET', '/api/tags?limit=500');
+  const ids = Object.fromEntries(Object.values(existing?.tags || {}).map((t) => [t.tag, t.id]));
+  const declared = new Set([SUBSCRIBER_TAG, ...TAGS.map((t) => t.tag)].filter(Boolean));
+  return segments.map((sg) => ({
+    ...sg,
+    filters: (sg.filters || []).map((f) => {
+      if (f.type !== 'tags' || !f.properties) return f;
+      const names = [].concat(f.properties.filter ?? []);
+      const resolved = names.map((n) => {
+        if (typeof n === 'number' || /^\d+$/.test(String(n))) return n;
+        if (ids[n] != null) return ids[n];
+        if (CHECK_ONLY && declared.has(n)) return 0;
+        throw new Error(`segment ${sg.alias}: no tag "${n}"`);
+      });
+      return { ...f, properties: { ...f.properties, filter: resolved } };
+    }),
+  }));
+}
+
 /** The tag every subscriber of this brand carries. Returns its id, creating it if absent. */
 async function ensureTag() {
   // No subscriber tag is a supported shape: segments then get `null` and filter on fields alone.
@@ -216,9 +433,14 @@ async function ensureTag() {
 }
 
 async function ensureSegments(tagId) {
-  // Without the tag id there is nothing to filter on; the drift report already named it.
-  if (tagId === null) return CHECK_ONLY ? SEGMENTS(0).length : 0;
-  const wanted = SEGMENTS(tagId);
+  let wanted;
+  if (SEGMENTS) {
+    // Without the tag id there is nothing to filter on; the drift report already named it.
+    if (tagId === null) return CHECK_ONLY ? SEGMENTS(0).length : 0;
+    wanted = SEGMENTS(tagId);
+  } else {
+    wanted = await resolveTagFilters(SEGMENT_LIST);
+  }
   const existing = await api('GET', '/api/segments?limit=500');
   const byAlias = new Map(Object.values(existing?.lists || {}).map((s) => [s.alias, s]));
 
@@ -236,8 +458,10 @@ async function ensureSegments(tagId) {
         name: s.name,
         alias: s.alias,
         description: s.description,
-        isPublished: true,
-        filters: s.filters,
+        isPublished: s.isPublished !== false,
+        ...(s.isGlobal !== undefined ? { isGlobal: s.isGlobal } : {}),
+        ...(s.projects ? { projects: s.projects } : {}),
+        filters: s.filters || [],
       });
       log(`+ segment ${s.alias}`);
       continue;
@@ -246,13 +470,13 @@ async function ensureSegments(tagId) {
     // Existing segments are RECONCILED, not skipped. A filter corrected in this file is
     // worthless if it only reaches instances that never had the wrong one — and a segment whose
     // filters have drifted fails silently, by quietly holding the wrong people.
-    if (!sameFilters(live.filters, s.filters)) {
+    if (!sameFilters(live.filters, s.filters || [])) {
       drift++;
       if (CHECK_ONLY) {
         log(`DRIFT segment filters: ${s.alias}`);
         continue;
       }
-      await api('PATCH', `/api/segments/${live.id}/edit`, { filters: s.filters });
+      await api('PATCH', `/api/segments/${live.id}/edit`, { filters: s.filters || [] });
       log(`~ segment ${s.alias} filters updated`);
       continue;
     }
@@ -309,29 +533,37 @@ async function ensurePages() {
  * the answer to any of them means the stored HTML is stale. An email whose body silently lags the
  * declaration is worse than a redundant PATCH.
  */
-async function ensureEmails(pageIds) {
+async function ensureEmails(pageIds, assetIds, categoryIds) {
   const existing = await api('GET', '/api/emails?limit=500');
   const live = new Map(Object.values(existing?.emails || {}).map((e) => [e.name, e]));
   const ids = {};
   let drift = 0;
 
   for (const email of EMAILS) {
-    const { html, plainText } = renderEmail(email, {
+    const { html, plainText } = renderEmail({ ...email, language: email.language || EMAIL_DEFAULTS.language }, {
       globals: GLOBALS,
       pageIds,
+      assetIds,
       brandName: GLOBALS.brand_name,
       brandUrl: GLOBALS.brand_url,
       footerLabels: D.footerLabels,
+      styles: D.emailStyles,
     });
     const payload = {
       name: email.name,
-      subject: email.subject,
+      // Subjects carry tokens too (`{global:trening_neve}`); rendered as plain text, never HTML.
+      subject: resolveTokens(email.subject, { globals: GLOBALS, assetIds, pageIds, plain: true }),
       preheaderText: email.preview || '',
       customHtml: html,
       plainText,
-      emailType: email.emailType || 'template',
-      language: email.language || 'en',
+      emailType: email.emailType || EMAIL_DEFAULTS.emailType || 'template',
+      language: email.language || EMAIL_DEFAULTS.language || 'en',
       isPublished: email.isPublished !== false,
+      ...(email.category ? { category: needId('category', categoryIds, email.category, `email ${email.name}`) } : {}),
+      ...(email.projects ? { projects: email.projects } : {}),
+      ...(email.fromName || EMAIL_DEFAULTS.fromName ? { fromName: email.fromName || EMAIL_DEFAULTS.fromName } : {}),
+      ...(email.fromAddress || EMAIL_DEFAULTS.fromAddress ? { fromAddress: email.fromAddress || EMAIL_DEFAULTS.fromAddress } : {}),
+      ...(email.replyToAddress || EMAIL_DEFAULTS.replyToAddress ? { replyToAddress: email.replyToAddress || EMAIL_DEFAULTS.replyToAddress } : {}),
     };
 
     const found = live.get(email.name);
@@ -362,15 +594,17 @@ async function ensureEmails(pageIds) {
         {
           globals: GLOBALS,
           pageIds,
+          assetIds,
           brandName: GLOBALS.brand_name,
           brandUrl: GLOBALS.brand_url,
           footerLabels: D.footerLabels,
+      styles: D.emailStyles,
         }
       );
       const childPayload = {
         ...payload,
         name: childName,
-        subject: copy.subject,
+        subject: resolveTokens(copy.subject, { globals: GLOBALS, assetIds, pageIds, plain: true }),
         preheaderText: copy.preview || '',
         customHtml: rendered.html,
         plainText: rendered.plainText,
@@ -411,7 +645,7 @@ async function ensureEmails(pageIds) {
  * An unresolved name THROWS. Mautic would accept the campaign with a null reference and simply
  * never fire that step: a double-opt-in that sends nothing, reporting no error anywhere.
  */
-function resolveCampaign(campaign, lookups) {
+function resolveCampaign(campaign, lookups, eventIds = {}) {
   const need = (kind, name) => {
     const id = lookups[kind]?.[name];
     if (id == null) {
@@ -428,8 +662,32 @@ function resolveCampaign(campaign, lookups) {
       props.addToLists = (props.addToLists || []).map((n) => need('segments', n));
       props.removeFromLists = (props.removeFromLists || []).map((n) => need('segments', n));
     }
-    return { ...e, properties: props };
+    if (e.type === 'stage.change') props.stage = need('stages', props.stage);
+    if (e.type === 'form.submit') props.forms = (props.forms || []).map((n) => need('forms', n));
+    // An event that already exists is sent under its LIVE numeric id, and its parent/children
+    // with it. A declared id (`send_confirm`) makes Mautic delete the old row and insert a new one,
+    // and every contact's progress is logged against the OLD id — so each provision would orphan
+    // the scheduled steps of everyone mid-campaign. Verified on Mautic 7: numeric ids update in place.
+    const id = (x) => (x == null ? x : (eventIds[x] ?? x));
+    return {
+      ...e,
+      id: id(e.id),
+      parent: id(e.parent),
+      children: (e.children || []).map(id),
+      // The API expects the key on interval/immediate events too, as null.
+      triggerDate: e.triggerDate ?? null,
+      properties: props,
+    };
   });
+
+  const canvasSettings =
+    campaign.canvasSettings === undefined
+      ? undefined
+      : JSON.parse(JSON.stringify(campaign.canvasSettings), (key, value) =>
+          (key === 'id' || key === 'sourceId' || key === 'targetId') && eventIds[value] != null
+            ? eventIds[value]
+            : value
+        );
 
   return {
     name: campaign.name,
@@ -438,11 +696,39 @@ function resolveCampaign(campaign, lookups) {
     lists: (campaign.lists || []).map((n) => ({ id: need('segments', n) })),
     forms: (campaign.forms || []).map((n) => ({ id: need('forms', n) })),
     events,
-    canvasSettings: campaign.canvasSettings,
+    canvasSettings,
+    ...(campaign.category ? { category: need('categories', campaign.category) } : {}),
+    ...(campaign.projects ? { projects: campaign.projects } : {}),
   };
 }
 
-/** Campaigns, matched by name. */
+/**
+ * Declared event id → live numeric id, matched by event NAME within the campaign.
+ *
+ * Names are the only stable key: Mautic never stores the declared id. So a duplicate name inside
+ * one campaign is refused — two events sharing one would silently swap their contact history.
+ */
+function matchEvents(campaign, liveEvents) {
+  const names = new Set();
+  for (const e of campaign.events) {
+    if (names.has(e.name)) {
+      throw new Error(`campaign ${campaign.name}: two events are named "${e.name}"; event names must be unique`);
+    }
+    names.add(e.name);
+  }
+  const byName = new Map(liveEvents.map((e) => [e.name, e]));
+  /** @type {Record<string, string>} */
+  const ids = {};
+  for (const e of campaign.events) {
+    const live = byName.get(e.name);
+    if (live) ids[e.id] = String(live.id);
+  }
+  const removed = liveEvents.filter((e) => !names.has(e.name)).map((e) => e.name);
+  const added = campaign.events.filter((e) => !byName.has(e.name)).map((e) => e.name);
+  return { ids, removed, added };
+}
+
+/** Campaigns, matched by name. Events matched by name inside each — see matchEvents. */
 async function ensureCampaigns(lookups) {
   const existing = await api('GET', '/api/campaigns?limit=500');
   const live = new Map(Object.values(existing?.campaigns || {}).map((c) => [c.name, c]));
@@ -450,29 +736,41 @@ async function ensureCampaigns(lookups) {
 
   for (const campaign of CAMPAIGNS) {
     const found = live.get(campaign.name);
-    if (CHECK_ONLY) {
-      if (!found) {
-        drift++;
+    if (!found) {
+      drift++;
+      if (CHECK_ONLY) {
         log(`DRIFT campaign missing: ${campaign.name}`);
-      } else {
-        log(`= campaign ${campaign.name}`);
+        continue;
       }
+      const res = await api('POST', '/api/campaigns/new', resolveCampaign(campaign, lookups));
+      log(`+ campaign ${campaign.name} (${res?.campaign?.id})`);
       continue;
     }
-    const payload = resolveCampaign(campaign, lookups);
-    if (found) {
-      // PUT, NEVER PATCH. Mautic's PATCH MERGES the events array — it appends what you send to
-      // what is already there instead of replacing it, so each re-provision grows the campaign by
-      // one full copy of itself. Three events became fifteen over five runs here, and the visible
-      // symptom was a subscriber receiving the confirmation email five times: every duplicated
-      // `email.send` fires. Nothing reports it; the campaign just quietly gains events.
-      await api('PUT', `/api/campaigns/${found.id}/edit`, payload);
-      log(`~ campaign ${campaign.name} updated`);
-    } else {
+
+    // The list endpoint may omit events; the single read is the one that carries them.
+    const detail = await api('GET', `/api/campaigns/${found.id}`);
+    const liveEvents = Object.values(detail?.campaign?.events || found.events || {});
+    const { ids, removed, added } = matchEvents(campaign, liveEvents);
+    if (removed.length || added.length) {
       drift++;
-      const res = await api('POST', '/api/campaigns/new', payload);
-      log(`+ campaign ${campaign.name} (${res?.campaign?.id})`);
+      // A REMOVED event is the dangerous half: contacts waiting on it lose that step for good.
+      if (removed.length) {
+        log(`${CHECK_ONLY ? 'DRIFT' : '!'} campaign ${campaign.name}: removes event(s) ${removed.map((n) => `"${n}"`).join(', ')} — contacts scheduled on them lose that step`);
+      }
+      if (added.length) {
+        log(`${CHECK_ONLY ? 'DRIFT' : '~'} campaign ${campaign.name}: adds event(s) ${added.map((n) => `"${n}"`).join(', ')}`);
+      }
     }
+    if (CHECK_ONLY) {
+      if (!removed.length && !added.length) log(`= campaign ${campaign.name}`);
+      continue;
+    }
+    // PUT, NEVER PATCH. Mautic's PATCH MERGES the events array — it appends what you send to what
+    // is already there, so each re-provision grows the campaign by one full copy of itself (three
+    // events became fifteen over five runs, and a subscriber got the confirmation email five
+    // times). PUT replaces the list, which is safe only because existing events keep their ids.
+    await api('PUT', `/api/campaigns/${found.id}/edit`, resolveCampaign(campaign, lookups, ids));
+    log(`~ campaign ${campaign.name} updated`);
   }
   return drift;
 }
@@ -558,6 +856,8 @@ async function ensureWebhooks() {
   const tokenProblems = checkTokens(EMAILS.concat(translated), {
     globals: GLOBALS,
     pages: PAGES.map((p) => p.alias),
+    assets: ASSETS.map((a) => a.name),
+    forms: FORMS.map((f) => f.alias),
   });
   if (tokenProblems.length) {
     throw new Error(`unresolved tokens:\n  ${tokenProblems.join('\n  ')}`);
@@ -566,11 +866,16 @@ async function ensureWebhooks() {
   // Order matters throughout: a segment cannot filter on a field or a tag that does not exist,
   // an email cannot link to a page that does not exist, and a campaign cannot reference either.
   const fieldDrift = await ensureFields();
+  const categories = await ensureCategories();
+  const tagDrift = await ensureTags();
+  const stages = await ensureStages();
   const tagId = await ensureTag();
   const segmentDrift = await ensureSegments(tagId);
+  const forms = await ensureForms(categories.ids);
+  const assets = await lookupAssets();
 
   const pages = await ensurePages();
-  const emails = await ensureEmails(pages.ids);
+  const emails = await ensureEmails(pages.ids, assets.ids, categories.ids);
 
   // `lists`, not `segments` — Mautic's segment endpoint is /api/segments but its response wrapper
   // kept the older name. Reading the wrong key yields an empty map and every campaign reference
@@ -584,13 +889,20 @@ async function ensureWebhooks() {
     emails: emails.ids,
     pages: pages.ids,
     segments: segmentIds,
-    forms: {},
+    forms: forms.ids,
+    stages: stages.ids,
+    categories: categories.ids,
   });
 
   const webhookDrift = await ensureWebhooks();
 
   const drift =
     fieldDrift +
+    categories.drift +
+    tagDrift +
+    stages.drift +
+    forms.drift +
+    assets.drift +
     (tagId === null ? 1 : 0) +
     segmentDrift +
     pages.drift +

@@ -13,6 +13,7 @@ import { baseParameters, configure } from './configure.mjs';
 import { loadEnv } from './env.mjs';
 import { install } from './install.mjs';
 import { provision } from './provision.mjs';
+import { checkTokens } from './tokens.mjs';
 
 export { baseParameters, configure } from './configure.mjs';
 export { dockerArgv, execIn, httpBase } from './docker.mjs';
@@ -49,11 +50,31 @@ export { checkTokens, MAUTIC_TOKEN_RE, referencedTokens, resolveTokens } from '.
  */
 
 /**
+ * Offline: every `{global|asset|form|page:…}` token in every email (and translation) points at
+ * something declared. The same check provision runs first, without a Mautic to talk to — for a
+ * build step or a pre-commit hook.
+ *
+ * @param {Declarations} D
+ * @returns {string[]} problems; empty means clean
+ */
+export function validate(D) {
+  const translated = Object.entries(D.emailTranslations || {}).flatMap(([name, langs]) =>
+    Object.entries(langs).map(([lang, copy]) => ({ ...copy, name: `${name} (${lang})` }))
+  );
+  return checkTokens((D.emails || []).concat(translated), {
+    globals: D.globals || {},
+    pages: (D.pages || []).map((p) => p.alias),
+    assets: (D.assets || []).map((a) => a.name),
+    forms: (D.forms || []).map((f) => f.alias),
+  });
+}
+
+/**
  * Run one step for a brand config, as a CLI would: flags from argv, exit code from the result.
  *
  * Exit codes: 0 ok · 1 failure or drift under --check · 2 misconfiguration.
  *
- * @param {'install' | 'configure' | 'provision'} step
+ * @param {'install' | 'configure' | 'provision' | 'validate'} step
  * @param {BrandConfig} config
  * @param {{ argv?: string[], configDir?: string }} [opts]
  */
@@ -63,6 +84,12 @@ export async function run(step, config, { argv = process.argv.slice(2), configDi
   const base = { env, cwd, composeFiles: config.composeFiles || [] };
   const checkOnly = argv.includes('--check');
   try {
+    if (step === 'validate') {
+      const problems = validate(config.declarations);
+      for (const p of problems) console.error(`✗ ${p}`);
+      if (!problems.length) console.log('= tokens ok');
+      return problems.length ? 1 : 0;
+    }
     if (step === 'install') {
       await install({
         ...base,

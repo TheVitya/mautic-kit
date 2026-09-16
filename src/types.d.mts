@@ -67,7 +67,69 @@ export type MauticSegment = {
    * enforces that in its conformance test).
    */
   service?: string;
-  filters: MauticFilter[];
+  /** Omitted for a segment filled only by campaigns (`lead.changelist`), not by a query. */
+  filters?: MauticFilter[];
+  isPublished?: boolean;
+  isGlobal?: boolean;
+  /** Mautic 7 Project ids — instance-specific. */
+  projects?: number[];
+};
+
+export type MauticCategory = {
+  alias: string;
+  title: string;
+  bundle: 'email' | 'form' | 'asset' | 'stage' | 'campaign' | 'page' | 'segment';
+  /** Hex without `#`. */
+  color: string;
+  isPublished?: boolean;
+};
+
+export type MauticTag = { tag: string; _description?: string };
+
+export type MauticStage = {
+  name: string;
+  weight: number;
+  description?: string;
+  isPublished?: boolean;
+};
+
+/** Looked up by title, never created — the file is uploaded in the UI. `name` is the token key. */
+export type MauticAsset = { name: string; title: string; remote_url?: string };
+
+export type MauticFormField = {
+  label: string;
+  alias: string;
+  type: string;
+  order: number;
+  [key: string]: unknown;
+};
+
+/**
+ * Created with its fields; an existing form's fields are never rewritten (its results table is keyed
+ * by field alias). Field differences surface as drift.
+ */
+export type MauticForm = {
+  name: string;
+  /** Mautic truncates form aliases to 10 characters — declare one that already fits. */
+  alias: string;
+  formType: 'campaign' | 'standalone';
+  description?: string | null;
+  isPublished?: boolean;
+  /** A category ALIAS. */
+  category?: string;
+  projects?: number[];
+  fields?: MauticFormField[];
+  actions?: unknown[];
+  [key: string]: unknown;
+};
+
+/** Brand-wide email settings; any email may override each one. */
+export type MauticEmailDefaults = {
+  language?: string;
+  emailType?: 'template' | 'list';
+  fromName?: string;
+  fromAddress?: string;
+  replyToAddress?: string;
 };
 
 
@@ -82,9 +144,15 @@ export type MauticPage = {
 
 export type MauticEmail = {
   name: string;
+  /** Tokens are resolved here too, as plain text. */
   subject: string;
-  preview?: string;
+  preview?: string | null;
+  /** A category ALIAS. */
   category?: string | null;
+  projects?: number[];
+  fromName?: string;
+  fromAddress?: string;
+  replyToAddress?: string;
   /** `template` is campaign-sendable; `list` is a broadcast to a segment. A campaign refuses a list email. */
   emailType?: 'template' | 'list';
   language?: string;
@@ -117,6 +185,8 @@ export type MauticActionType =
 export type MauticDecisionType = 'form.submit' | 'page.pagehit' | 'asset.download' | 'email.open';
 
 type EventCommon = {
+  /** Only for `triggerMode: 'date'`-style scheduling; sent as null otherwise. */
+  triggerDate?: string | null;
   id: string;
   name: string;
   description?: string;
@@ -174,12 +244,24 @@ export type MauticCampaignEvent =
       properties: Record<string, string | number>;
     })
   | (EventCommon & {
-      type: Exclude<MauticActionType, 'email.send' | 'lead.changelist' | 'lead.changetags' | 'lead.updatelead'>;
+      type: 'stage.change';
+      eventType: 'action';
+      /** A STAGE NAME. */
+      properties: { stage: string };
+    })
+  | (EventCommon & {
+      type: 'form.submit';
+      eventType: 'decision';
+      /** FORM ALIASES. */
+      properties: { forms: string[] };
+    })
+  | (EventCommon & {
+      type: Exclude<MauticActionType, 'email.send' | 'lead.changelist' | 'lead.changetags' | 'lead.updatelead' | 'stage.change'>;
       eventType: 'action';
       properties: Record<string, unknown>;
     })
   | (EventCommon & {
-      type: Exclude<MauticDecisionType, 'page.pagehit'>;
+      type: Exclude<MauticDecisionType, 'page.pagehit' | 'form.submit'>;
       eventType: 'decision';
       properties: Record<string, unknown>;
     });
@@ -191,7 +273,11 @@ export type MauticCampaign = {
   isPublished: boolean;
   /** Source segments, by alias. */
   lists: string[];
+  /** Source forms, by alias. */
   forms: string[];
+  /** A category ALIAS. */
+  category?: string;
+  projects?: number[];
   events: MauticCampaignEvent[];
   canvasSettings?: unknown;
 };

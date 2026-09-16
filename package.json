@@ -1,6 +1,6 @@
 {
   "name": "mautic-kit",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Install, configure and provision Mautic from per-brand declarations. Zero dependencies.",
   "private": true,
   "type": "module",

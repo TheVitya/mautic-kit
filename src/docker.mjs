@@ -79,9 +79,12 @@ export function dockerArgv(ctx, service, argv) {
   // `-T` (no TTY) is a `docker compose exec` flag; plain `docker exec` / `podman exec` reject it and
   // allocate no TTY by default anyway. Passing it there made every named-container call fail with a
   // usage message — the managed-host mode never worked until this split.
-  if (container) return ['exec', '-u', 'www-data', container, ...argv];
+  // MAUTIC_EXEC_USER: some podman setups cannot resolve the NAME inside the container ("unable to
+  // find user www-data") while the numeric id works — `33:33` is www-data in the official image.
+  const user = env.MAUTIC_EXEC_USER || 'www-data';
+  if (container) return ['exec', '-u', user, container, ...argv];
   const compose = composeFiles.flatMap((f) => ['-f', f]);
-  return ['compose', ...compose, 'exec', '-T', '-u', 'www-data', service, ...argv];
+  return ['compose', ...compose, 'exec', '-T', '-u', user, service, ...argv];
 }
 
 /**

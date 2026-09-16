@@ -72,6 +72,7 @@ type Ctx = { env: Env; composeFiles?: string[]; cwd?: string; log?: Log };
 
 export function loadEnv(file?: string): Env;
 export function httpBase(env: Env): string;
+export function shellQuote(word: string): string;
 export function dockerArgv(ctx: Ctx, service: 'mautic' | 'mautic_cron', argv: string[]): string[];
 export function execIn(
   ctx: Ctx,

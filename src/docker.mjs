@@ -17,12 +17,36 @@
  *                 docker to exec through and the console is simply on PATH.
  *
  * MAUTIC_DOCKER swaps the binary (e.g. `podman`), for hosts that run Mautic under podman.
+ *
+ * MAUTIC_SSH=user@host runs the same exec ON that host — for configure/install from a laptop against a
+ * server's containers. The command is shell-quoted and piped to `bash -s` rather than passed as ssh
+ * arguments: ssh hands its arguments to the remote LOGIN shell, which may be fish or zsh, and the
+ * `php -r` code configure sends would be re-parsed there. There MAUTIC_DOCKER may carry flags
+ * (`podman --url unix:///run/podman/podman.sock` for a rootful socket from a non-root login).
  */
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
+
+/** POSIX single-quote a word for bash. */
+export function shellQuote(word) {
+  return /^[A-Za-z0-9_\/.:=@%+,-]+$/.test(word) ? word : `'${String(word).replace(/'/g, `'\\''`)}'`;
+}
+
+/** Run a command line on a remote host through `bash -s`, with stdout/stderr like execFile. */
+function execRemote(target, commandLine, opts) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      'ssh',
+      ['-o', 'BatchMode=yes', target, 'bash', '-s'],
+      { maxBuffer: opts.maxBuffer },
+      (err, stdout, stderr) => (err ? reject(Object.assign(err, { stdout, stderr })) : resolve({ stdout, stderr }))
+    );
+    child.stdin.end(`${commandLine}\n`);
+  });
+}
 
 /**
  * `-u www-data`: exec defaults to ROOT, and anything root creates under var/cache or config is
@@ -74,6 +98,11 @@ export function execIn(ctx, service, argv, opts = {}) {
   if (ctx.env.MAUTIC_EXEC === 'local') {
     const [cmd, ...rest] = argv;
     return execFileAsync(cmd, rest, base);
+  }
+  if (ctx.env.MAUTIC_SSH) {
+    const bin = ctx.env.MAUTIC_DOCKER || 'docker'; // may include flags; the remote bash splits it
+    const line = `exec ${bin} ${dockerArgv(ctx, service, argv).map(shellQuote).join(' ')}`;
+    return execRemote(ctx.env.MAUTIC_SSH, line, base);
   }
   return execFileAsync(ctx.env.MAUTIC_DOCKER || 'docker', dockerArgv(ctx, service, argv), base);
 }

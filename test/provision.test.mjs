@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
-import { dockerArgv } from '../src/docker.mjs';
+import { dockerArgv, shellQuote } from '../src/docker.mjs';
 import { provision } from '../src/provision.mjs';
 
 function fakeMautic() {
@@ -362,4 +362,11 @@ test('a missing asset is drift, and a missing category stops the run', async () 
   } finally {
     m.close();
   }
+});
+
+test('shellQuote survives the php -r code configure sends', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const words = ['php', '-r', `include '/x/local.php'; echo json_encode($parameters); $a = "b";`, 'it\'s', 'plain'];
+  const out = execFileSync('bash', ['-c', `printf '%s\\n' ${words.map(shellQuote).join(' ')}`], { encoding: 'utf8' });
+  assert.deepEqual(out.trimEnd().split('\n'), words);
 });

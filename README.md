@@ -59,7 +59,9 @@ brands also set `emailDefaults` (sender, language), `footerLabels` and `emailSty
 `MAUTIC_PROVISION_URL` (how *this machine* reaches Mautic) · `MAUTIC_API_USERNAME` /
 `MAUTIC_API_PASSWORD` · `MAUTIC_SITE_URL` (what Mautic writes into mail) · `MAUTIC_DB_*` (install) ·
 `MAUTIC_CONTAINER` + `MAUTIC_CRON_CONTAINER` (both or neither) · `MAUTIC_EXEC=local` (inside the
-image) · `MAUTIC_DOCKER=podman` · `MAUTIC_WEBHOOK_TOKEN`.
+image) · `MAUTIC_DOCKER=podman` · `MAUTIC_SSH=user@host` (run console steps on a server's containers
+from a laptop; `MAUTIC_DOCKER` may then carry flags, e.g. `podman --url unix:///run/podman/podman.sock`) ·
+`MAUTIC_WEBHOOK_TOKEN`.
 
 ## Known traps (read before pointing at a live instance)
 

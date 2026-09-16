@@ -16,7 +16,7 @@ import { provision } from './provision.mjs';
 import { checkTokens } from './tokens.mjs';
 
 export { baseParameters, configure } from './configure.mjs';
-export { dockerArgv, execIn, httpBase } from './docker.mjs';
+export { dockerArgv, execIn, httpBase, shellQuote } from './docker.mjs';
 export { loadEnv } from './env.mjs';
 export { renderEmail, textToHtml, textToPlain, wrapHtml } from './html.mjs';
 export { install, instanceState } from './install.mjs';

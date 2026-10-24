@@ -1,0 +1,93 @@
+# Reusable: build a brand's declarations and provision them into its Mautic over the REST API.
+# Callers pass apply: false on pull requests (drift report only) and true on main.
+name: provision
+
+on:
+  workflow_call:
+    inputs:
+      directory:
+        description: The brand's Mautic package (holds package.json and mautic.config.mjs)
+        type: string
+        required: true
+      url:
+        description: MAUTIC_PROVISION_URL, the instance's public base URL
+        type: string
+        required: true
+      apply:
+        type: boolean
+        default: false
+      env:
+        description: Extra non-secret KEY=VALUE lines the brand config reads (APP_URL, …)
+        type: string
+        default: ''
+      runs-on:
+        description: JSON runner label(s)
+        type: string
+        default: '"ubuntu-latest"'
+    secrets:
+      MAUTIC_API_USERNAME:
+        required: true
+      MAUTIC_API_PASSWORD:
+        required: true
+      MAUTIC_WEBHOOK_TOKEN:
+        required: false
+
+concurrency:
+  group: mautic-provision-${{ inputs.url }}
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.directory }}
+    env:
+      MAUTIC_PROVISION_URL: ${{ inputs.url }}
+      MAUTIC_API_USERNAME: ${{ secrets.MAUTIC_API_USERNAME }}
+      MAUTIC_API_PASSWORD: ${{ secrets.MAUTIC_API_PASSWORD }}
+      MAUTIC_WEBHOOK_TOKEN: ${{ secrets.MAUTIC_WEBHOOK_TOKEN }}
+      CUE_VERSION: v0.15.4
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install cue
+        run: |
+          mkdir -p "$RUNNER_TEMP/cue"
+          curl -fsSL "https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/cue_${CUE_VERSION}_linux_amd64.tar.gz" |
+            tar -xz -C "$RUNNER_TEMP/cue" cue
+          echo "$RUNNER_TEMP/cue" >> "$GITHUB_PATH"
+
+      - name: Brand env
+        if: inputs.env != ''
+        env:
+          EXTRA: ${{ inputs.env }}
+        run: printf '%s\n' "$EXTRA" | grep -E '^[A-Z_][A-Z0-9_]*=' >> "$GITHUB_ENV"
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm run validate
+      - run: npm test --if-present
+
+      # Exit 1 means drift, which is what a PR is for; the list is the review.
+      - name: Drift
+        run: |
+          set +e
+          npx mautic-kit provision --config ./mautic.config.mjs --check > drift.txt 2>&1
+          rc=$?
+          grep -vE '^= ' drift.txt
+          {
+            echo "### Mautic drift (${MAUTIC_PROVISION_URL})"
+            echo '```'
+            grep -vE '^= ' drift.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$rc" -le 1 ]
+
+      - name: Apply
+        if: inputs.apply
+        run: npx mautic-kit provision --config ./mautic.config.mjs --no-recreate

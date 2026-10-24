@@ -20,6 +20,8 @@ idempotent re-provision, a real send).
 | `validate` | offline: every `{global|asset|form|page:…}` token resolves | no Mautic |
 
 `--check` on `configure`/`provision` reports drift and changes nothing (exit 1 on drift).
+`provision --no-recreate` fails instead of deleting and recreating a field whose type changed (that
+empties it); CI applies with it, so a recreate is always a deliberate local run.
 
 ## Brand config
 
@@ -62,6 +64,24 @@ brands also set `emailDefaults` (sender, language), `footerLabels` and `emailSty
 image) · `MAUTIC_DOCKER=podman` · `MAUTIC_EXEC_USER` (default `www-data`; `33:33` where podman cannot resolve the name) · `MAUTIC_SSH=user@host` (run console steps on a server's containers
 from a laptop; `MAUTIC_DOCKER` may then carry flags, e.g. `podman --url unix:///run/podman/podman.sock`) ·
 `MAUTIC_WEBHOOK_TOKEN`.
+
+## CI
+
+`.github/workflows/provision.yml` is reusable: it builds the CUE, validates, runs the brand's tests,
+reports drift in the job summary and, with `apply: true`, provisions with `--no-recreate`.
+
+```yaml
+jobs:
+  mautic:
+    uses: TheVitya/mautic-kit/.github/workflows/provision.yml@v0.3.0
+    with:
+      directory: mautic
+      url: https://mautic.example.com
+      apply: ${{ github.event_name != 'pull_request' }}
+    secrets:
+      MAUTIC_API_USERNAME: ${{ secrets.MAUTIC_API_USERNAME }}
+      MAUTIC_API_PASSWORD: ${{ secrets.MAUTIC_API_PASSWORD }}
+```
 
 ## Known traps (read before pointing at a live instance)
 

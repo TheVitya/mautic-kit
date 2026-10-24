@@ -135,6 +135,20 @@ test('provision creates everything, then --check on the same state reports no dr
   }
 });
 
+test('--no-recreate refuses a field type change and leaves the field alone', async () => {
+  const m = await fakeMautic();
+  try {
+    const env = { MAUTIC_PROVISION_URL: m.url, MAUTIC_API_PASSWORD: 'pw' };
+    await provision({ env, declarations: DECLARATIONS, log: quiet });
+    const retyped = { ...DECLARATIONS, fields: [{ ...DECLARATIONS.fields[0], type: 'text' }] };
+    await assert.rejects(provision({ env, declarations: retyped, noRecreate: true, log: quiet }), /--no-recreate: confirmed \(boolean -> text\)/);
+    assert.equal(m.store.fields[0].type, 'boolean');
+    assert.ok(!m.calls.some((c) => c.startsWith('DELETE')));
+  } finally {
+    m.close();
+  }
+});
+
 test('campaigns are updated with PUT, never PATCH (PATCH appends events)', async () => {
   const m = await fakeMautic();
   try {

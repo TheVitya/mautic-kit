@@ -69,13 +69,14 @@ function client(base, auth) {
  * @param {Record<string, string|undefined>} ctx.env
  * @param {import('./index.mjs').Declarations} ctx.declarations
  * @param {boolean} [ctx.checkOnly]
+ * @param {boolean} [ctx.noRecreate]      refuse a field type change instead of delete-and-recreate
  * @param {string} [ctx.resyncHint]      how to backfill a recreated field, printed after one
  * @param {string} [ctx.webhookBaseUrl]  how MAUTIC reaches the webhook receiver
  * @param {(msg: string) => void} [ctx.log]
  * @returns {Promise<number>} drift count (applied unless checkOnly)
  */
 export async function provision(ctx) {
-  const { env, declarations: D, checkOnly: CHECK_ONLY = false, log = console.log } = ctx;
+  const { env, declarations: D, checkOnly: CHECK_ONLY = false, noRecreate = false, log = console.log } = ctx;
   const BASE = httpBase(env);
   const USER = env.MAUTIC_API_USERNAME || 'admin';
   const PASS = env.MAUTIC_API_PASSWORD || env.MAUTIC_ADMIN_PASSWORD || '';
@@ -135,6 +136,14 @@ async function ensureFields() {
 
   const missing = FIELDS.filter((f) => !live.has(f.alias));
   const wrongType = FIELDS.filter((f) => live.has(f.alias) && live.get(f.alias).type !== f.type);
+
+  // Unattended runs (CI) must not empty a field; a recreate is a decision for a human run.
+  if (noRecreate && !CHECK_ONLY && wrongType.length) {
+    throw new Error(
+      `--no-recreate: ${wrongType.map((f) => `${f.alias} (${live.get(f.alias).type} -> ${f.type})`).join(', ')} ` +
+        `would be deleted and recreated, emptying stored values. Run without --no-recreate to do it.`
+    );
+  }
 
   for (const f of missing) {
     if (CHECK_ONLY) {

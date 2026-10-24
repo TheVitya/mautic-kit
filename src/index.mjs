@@ -108,6 +108,7 @@ export async function run(step, config, { argv = process.argv.slice(2), configDi
         ...base,
         declarations: config.declarations,
         checkOnly,
+        noRecreate: argv.includes('--no-recreate'),
         resyncHint: config.resyncHint,
         webhookBaseUrl: config.webhookBaseUrl ? config.webhookBaseUrl(env) : undefined,
       });

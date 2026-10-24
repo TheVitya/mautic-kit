@@ -13,7 +13,7 @@ const i = rest.indexOf('--config');
 const configPath = i >= 0 ? rest[i + 1] : process.env.MAUTIC_KIT_CONFIG;
 
 if (!step || !configPath) {
-  console.error('usage: mautic-kit <install|configure|provision|validate> --config <brand config .mjs> [--check|--force|--if-needed]');
+  console.error('usage: mautic-kit <install|configure|provision|validate> --config <brand config .mjs> [--check|--no-recreate|--force|--if-needed]');
   process.exit(2);
 }
 

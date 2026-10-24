@@ -89,6 +89,9 @@ jobs:
   are matched by NAME and sent under their live ids, so contacts mid-campaign keep their progress —
   verified on Mautic 7 (a declared id like `new_send_2` would delete and recreate the row). Renaming
   an event therefore REMOVES the old one; `--check` prints `removes event(s)`.
+- **`--check` sees campaign events by name only.** A changed delay, email or condition on an
+  existing event is not reported as drift; it lands because every apply PUTs every campaign
+  (hence `~ campaign … updated` on each run). Do not read a clean PR report as "campaigns unchanged".
 - An existing form's **fields are never rewritten** (the results table is keyed by field alias);
   field differences are reported as drift.
 - A field whose type changed is **deleted and recreated** — its values are lost; the brand's

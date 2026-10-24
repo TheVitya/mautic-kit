@@ -54,6 +54,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          # Else a root packageManager (pnpm) turns on a cache for a tool the runner may lack.
+          package-manager-cache: false
 
       - name: Install cue
         run: |

@@ -1,0 +1,6 @@
+# Exact version tags (v7.0.1), not SHAs: readable, and still fixed per release.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "*": ref-pin

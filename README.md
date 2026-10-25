@@ -73,7 +73,7 @@ reports drift in the job summary and, with `apply: true`, provisions with `--no-
 ```yaml
 jobs:
   mautic:
-    uses: TheVitya/mautic-kit/.github/workflows/provision.yml@v0.3.1
+    uses: TheVitya/mautic-kit/.github/workflows/provision.yml@v0.3.2
     with:
       directory: mautic
       url: https://mautic.example.com

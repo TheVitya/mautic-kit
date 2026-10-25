@@ -49,9 +49,11 @@ jobs:
       MAUTIC_WEBHOOK_TOKEN: ${{ secrets.MAUTIC_WEBHOOK_TOKEN }}
       CUE_VERSION: v0.15.4
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v5.0.0
         with:
           node-version: 22
           # Else a root packageManager (pnpm) turns on a cache for a tool the runner may lack.

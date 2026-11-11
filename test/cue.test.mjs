@@ -85,6 +85,8 @@ const BROKEN = [
   ['changetags names an undeclared tag', (s) => s.replace('add_tags: ["news"]', 'add_tags: ["ghost"]'), /lead\.changetags \\"ghost\\"/],
   ['tag filter names an undeclared tag', (s) => s.replace('filter: ["news"]', 'filter: ["ghost"]'), /filter/],
   ['email category from the wrong bundle', (s) => s.replace('category: "seq"}', 'category: "camp"}'), /category/],
+  ['list email without a segment', (s) => s.replace(', lists: ["mailable"]}]', '}]'), /names no segment/],
+  ['list email names a missing segment', (s) => s.replace('emailType: "list", lists: ["mailable"]', 'emailType: "list", lists: ["gone"]'), /lists|gone/],
   ['interval trigger without an interval', (s) => s.replace('triggerInterval: 1, triggerIntervalUnit: "d"', 'triggerInterval: 0, triggerIntervalUnit: null'), /./],
 ];
 

@@ -6,7 +6,7 @@ declarations: schema.#Declarations & {
 	stages: [{name: "Active", weight: 1}]
 	segments: [{alias: "mailable", name: "M", filters: [{glue: "and", field: "tags", object: "lead", type: "tags", operator: "in", properties: filter: ["news"]}]}]
 	globals: {brand_name: "B", brand_url: "https://b"}
-	emails: [{name: "welcome", subject: "Hi", body: "x", category: "seq"}]
+	emails: [{name: "welcome", subject: "Hi", body: "x", category: "seq"}, {name: "news", subject: "News", body: "z", emailType: "list", lists: ["mailable"]}]
 	emailTranslations: welcome: hu: {subject: "Szia", body: "y"}
 	campaigns: [{
 		name: "W", isPublished: false, lists: ["mailable"], forms: [], category: "camp"

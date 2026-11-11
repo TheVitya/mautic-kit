@@ -57,7 +57,8 @@ In JSON declarations `segments` is an array and `tags` filters name tags (resolv
 brands also set `emailDefaults` (sender, language), `footerLabels` and `emailStyles`.
 `footerLabels` takes per-language overrides beside its defaults —
 `{ unsubscribe: 'Unsubscribe', hu: { unsubscribe: 'Leiratkozás', webview: '…' } }` — and the
-text/plain part carries the same unsubscribe link as the HTML footer.
+text/plain part carries the same unsubscribe link as the HTML footer. A `list` (broadcast)
+email names its segments in `lists` (aliases); `cue vet` refuses one without, as Mautic does.
 
 ## Environment
 

@@ -392,3 +392,38 @@ test('escapePercent doubles % the way Mautic stores DSNs in local.php', () => {
   assert.equal(escapePercent(1), 1);
   assert.deepEqual(escapePercent(['a%b']), ['a%%b']);
 });
+
+test('a list email is created with its segments resolved to ids', async () => {
+  // Mautic 400s a broadcast created without `lists`; the names must reach it as segment ids.
+  const m = await fakeMautic();
+  try {
+    const env = { MAUTIC_PROVISION_URL: m.url, MAUTIC_API_PASSWORD: 'pw' };
+    const declarations = {
+      ...DECLARATIONS,
+      emails: [...DECLARATIONS.emails, { name: 'news', subject: 'News', body: 'z', emailType: 'list', lists: ['mailable'] }],
+      emailTranslations: { news: { hu: { subject: 'Hírek', body: 'z' } } },
+    };
+    await provision({ env, declarations, log: quiet });
+    const segmentId = m.store.lists.find((l) => l.alias === 'mailable').id;
+    const news = m.store.emails.find((e) => e.name === 'news');
+    const newsHu = m.store.emails.find((e) => e.name === 'news-hu');
+    assert.deepEqual(news.lists, [segmentId]);
+    assert.deepEqual(newsHu.lists, [segmentId], 'a translation goes to the same segment');
+  } finally {
+    m.close();
+  }
+});
+
+test('a list email naming an undeclared segment stops the run', async () => {
+  const m = await fakeMautic();
+  try {
+    const env = { MAUTIC_PROVISION_URL: m.url, MAUTIC_API_PASSWORD: 'pw' };
+    const declarations = {
+      ...DECLARATIONS,
+      emails: [...DECLARATIONS.emails, { name: 'news', subject: 'News', body: 'z', emailType: 'list', lists: ['nope'] }],
+    };
+    await assert.rejects(provision({ env, declarations, log: quiet }), /no segment "nope"/);
+  } finally {
+    m.close();
+  }
+});

@@ -153,6 +153,8 @@ export type MauticEmail = {
   fromName?: string;
   fromAddress?: string;
   replyToAddress?: string;
+  /** Segment aliases a `list` email is broadcast to; required for `list` (Mautic refuses to create one without). */
+  lists?: string[];
   /** `template` is campaign-sendable; `list` is a broadcast to a segment. A campaign refuses a list email. */
   emailType?: 'template' | 'list';
   language?: string;

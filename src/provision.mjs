@@ -386,6 +386,15 @@ async function lookupAssets() {
 }
 
 /** A symbolic reference that must resolve, or the run stops — Mautic would accept a 0 silently. */
+/** A segment alias -> id. Under --check a declared segment that is not live yet resolves to 0
+ * (its absence is already reported as drift); a name nobody declared throws in both modes. */
+function needSegmentId(map, name, where) {
+  const id = map[name];
+  if (id != null) return id;
+  if (CHECK_ONLY) return 0;
+  throw new Error(`${where}: no segment "${name}"`);
+}
+
 function needId(kind, map, name, where) {
   const id = map[name];
   if (id != null) return id;
@@ -542,7 +551,7 @@ async function ensurePages() {
  * the answer to any of them means the stored HTML is stale. An email whose body silently lags the
  * declaration is worse than a redundant PATCH.
  */
-async function ensureEmails(pageIds, assetIds, categoryIds) {
+async function ensureEmails(pageIds, assetIds, categoryIds, segmentIds = {}) {
   const existing = await api('GET', '/api/emails?limit=500');
   const live = new Map(Object.values(existing?.emails || {}).map((e) => [e.name, e]));
   const ids = {};
@@ -570,6 +579,12 @@ async function ensureEmails(pageIds, assetIds, categoryIds) {
       isPublished: email.isPublished !== false,
       ...(email.category ? { category: needId('category', categoryIds, email.category, `email ${email.name}`) } : {}),
       ...(email.projects ? { projects: email.projects } : {}),
+      // A `list` email is a broadcast and Mautic refuses to CREATE one without its segments
+      // (400 "Either no list was selected…"). Names resolve to ids like a campaign's `lists`;
+      // translations inherit them through the payload spread.
+      ...(email.lists
+        ? { lists: email.lists.map((n) => needSegmentId(segmentIds, n, `email ${email.name}`)) }
+        : {}),
       ...(email.fromName || EMAIL_DEFAULTS.fromName ? { fromName: email.fromName || EMAIL_DEFAULTS.fromName } : {}),
       ...(email.fromAddress || EMAIL_DEFAULTS.fromAddress ? { fromAddress: email.fromAddress || EMAIL_DEFAULTS.fromAddress } : {}),
       ...(email.replyToAddress || EMAIL_DEFAULTS.replyToAddress ? { replyToAddress: email.replyToAddress || EMAIL_DEFAULTS.replyToAddress } : {}),
@@ -884,15 +899,17 @@ async function ensureWebhooks() {
   const assets = await lookupAssets();
 
   const pages = await ensurePages();
-  const emails = await ensureEmails(pages.ids, assets.ids, categories.ids);
 
   // `lists`, not `segments` — Mautic's segment endpoint is /api/segments but its response wrapper
   // kept the older name. Reading the wrong key yields an empty map and every campaign reference
-  // fails to resolve, which reads like a missing segment rather than a wrong key.
+  // fails to resolve, which reads like a missing segment rather than a wrong key. Read BEFORE the
+  // emails: a broadcast (`list`) email names its segments too.
   const segments = await api('GET', '/api/segments?limit=500');
   const segmentIds = Object.fromEntries(
     Object.values(segments?.lists || {}).map((s) => [s.alias, s.id])
   );
+
+  const emails = await ensureEmails(pages.ids, assets.ids, categories.ids, segmentIds);
 
   const campaignDrift = await ensureCampaigns({
     emails: emails.ids,

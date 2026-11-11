@@ -115,6 +115,8 @@ package schema
 	category?:       string | null
 	projects?:       [...int]
 	emailType?:      "template" | "list"
+	// Segment aliases a `list` (broadcast) email goes to. Mautic refuses to create one without.
+	lists?: [...string]
 	language?:       string
 	fromName?:       string
 	fromAddress?:    string

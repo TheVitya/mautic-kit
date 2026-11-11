@@ -48,7 +48,7 @@ import "list"
 	let _catForm = or([_none, for c in categories if c.bundle == "form" {c.alias}])
 	let _catCampaign = or([_none, for c in categories if c.bundle == "campaign" {c.alias}])
 
-	emails: [...{category?: _catEmail | null}]
+	emails: [...{category?: _catEmail | null, lists?: [..._segment]}]
 	forms: [...{category?: _catForm}]
 	segments: [...{filters?: [...{
 		type: _
@@ -73,6 +73,9 @@ import "list"
 	// Each check's FIELD NAME says what is broken, so `cue vet` reports e.g.
 	// `_refs."email.send \"nope\" in W / Send": conflicting values false and true`.
 	_refs: {
+		for e in emails if e.emailType != _|_ if e.emailType == "list" {
+			"list email \"\(e.name)\" names no segment in lists": (e.lists != _|_) & true
+		}
 		for name, _ in emailTranslations {
 			"translation of unknown email \"\(name)\"": list.Contains(_emails, name) & true
 		}

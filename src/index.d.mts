@@ -40,7 +40,7 @@ export type Declarations = {
   globals?: Record<string, string>;
   campaigns?: MauticCampaign[];
   webhooks?: MauticWebhook[];
-  footerLabels?: { unsubscribe?: string; webview?: string };
+  footerLabels?: FooterLabels;
   categories?: MauticCategory[];
   /** Tags beyond `subscriberTag`. */
   tags?: MauticTag[];
@@ -102,13 +102,20 @@ export function run(
 ): Promise<number>;
 export function loadConfig(path: string): Promise<{ config: BrandConfig; configDir: string }>;
 
+/** Default labels, plus optional per-language overrides keyed by language code. */
+export type FooterLabels = { unsubscribe?: string; webview?: string } & Record<string, { unsubscribe?: string; webview?: string } | string | undefined>;
+export function footerLabelsFor(
+  footerLabels?: FooterLabels,
+  lang?: string
+): { unsubscribe: string; webview: string };
+
 export type RenderOpts = {
   globals?: Record<string, string>;
   assetIds?: Record<string, number>;
   pageIds?: Record<string, number>;
   brandName?: string;
   brandUrl?: string;
-  footerLabels?: { unsubscribe?: string; webview?: string };
+  footerLabels?: FooterLabels;
   styles?: { button?: string; link?: string };
 };
 export function renderEmail(
@@ -124,7 +131,7 @@ export function wrapHtml(
     brandName?: string;
     brandUrl?: string;
     lang?: string;
-    footerLabels?: { unsubscribe?: string; webview?: string };
+    footerLabels?: FooterLabels;
   }
 ): string;
 export const MAUTIC_TOKEN_RE: RegExp;

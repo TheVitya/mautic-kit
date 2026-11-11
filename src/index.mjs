@@ -18,7 +18,7 @@ import { checkTokens } from './tokens.mjs';
 export { baseParameters, configure } from './configure.mjs';
 export { dockerArgv, execIn, httpBase, shellQuote } from './docker.mjs';
 export { loadEnv } from './env.mjs';
-export { renderEmail, textToHtml, textToPlain, wrapHtml } from './html.mjs';
+export { footerLabelsFor, renderEmail, textToHtml, textToPlain, wrapHtml } from './html.mjs';
 export { install, instanceState } from './install.mjs';
 export { provision } from './provision.mjs';
 export { checkTokens, MAUTIC_TOKEN_RE, referencedTokens, resolveTokens } from './tokens.mjs';
@@ -34,7 +34,7 @@ export { checkTokens, MAUTIC_TOKEN_RE, referencedTokens, resolveTokens } from '.
  * @property {Record<string, string>} [globals]  `brand_name` / `brand_url` feed the email footer
  * @property {import('./types.d.mts').MauticCampaign[]} [campaigns]
  * @property {Array<{ name: string, description?: string, path: string, isPublished?: boolean, triggers: string[] }>} [webhooks]
- * @property {{ unsubscribe?: string, webview?: string }} [footerLabels]
+ * @property {{ unsubscribe?: string, webview?: string, [lang: string]: any }} [footerLabels]  defaults plus per-language overrides (`hu: { unsubscribe }`)
  */
 
 /**

@@ -19,7 +19,12 @@ import "list"
 	pages: [...#Page]
 	globals: [string]: string
 	emailDefaults?: #EmailDefaults
-	footerLabels?: {unsubscribe?: string, webview?: string}
+	// Defaults, plus per-language overrides keyed by language code: {unsubscribe, webview, hu: {…}}.
+	footerLabels?: {
+		unsubscribe?: string
+		webview?:     string
+		[=~"^[a-z]{2}$"]: {unsubscribe?: string, webview?: string}
+	}
 	// Inline CSS for `{token|Button}` / `{token||link}`.
 	emailStyles?: {button?: string, link?: string}
 	emails: [...#Email]

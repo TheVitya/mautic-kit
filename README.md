@@ -55,6 +55,9 @@ cue vet -c ./cue && cue export ./cue -e declarations > data/declarations.json
 
 In JSON declarations `segments` is an array and `tags` filters name tags (resolved to ids);
 brands also set `emailDefaults` (sender, language), `footerLabels` and `emailStyles`.
+`footerLabels` takes per-language overrides beside its defaults —
+`{ unsubscribe: 'Unsubscribe', hu: { unsubscribe: 'Leiratkozás', webview: '…' } }` — and the
+text/plain part carries the same unsubscribe link as the HTML footer.
 
 ## Environment
 

@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { renderEmail, textToHtml, textToPlain, wrapHtml } from '../src/html.mjs';
+import { footerLabelsFor, renderEmail, textToHtml, textToPlain, wrapHtml } from '../src/html.mjs';
 import { checkTokens, referencedTokens, resolveTokens } from '../src/tokens.mjs';
 
 const BRAND = { brandName: 'Basket index', brandUrl: 'https://example.test' };
@@ -221,4 +221,34 @@ test('the rendered confirmation email actually contains a link', () => {
   assert.match(html, /<a href="\{pagelink=1\}"/);
   assert.ok(!html.includes('{page:'));
   assert.ok(!plainText.includes('{page:'));
+});
+
+// ------------------------------------------------------------------ the footer, per language
+
+test('footer labels follow the email language, falling back to the brand default', () => {
+  const labels = { unsubscribe: 'Unsubscribe', hu: { unsubscribe: 'Leiratkozás', webview: 'Megtekintés böngészőben' } };
+  assert.deepEqual(footerLabelsFor(labels, 'hu'), { unsubscribe: 'Leiratkozás', webview: 'Megtekintés böngészőben' });
+  // A language with no entry gets the defaults, and a missing default gets English.
+  assert.deepEqual(footerLabelsFor(labels, 'sr'), { unsubscribe: 'Unsubscribe', webview: 'View in browser' });
+  // Flat declarations — every brand before per-language labels — are unchanged.
+  assert.deepEqual(footerLabelsFor({ unsubscribe: 'Odjava' }, 'en'), { unsubscribe: 'Odjava', webview: 'View in browser' });
+});
+
+test('a translated email carries its own language in the HTML footer', () => {
+  const footerLabels = { hu: { unsubscribe: 'Leiratkozás', webview: 'Megtekintés böngészőben' } };
+  const hu = renderEmail({ body: 'Szia', language: 'hu' }, { ...BRAND, footerLabels });
+  assert.match(hu.html, /<a href="\{unsubscribe_url\}"[^>]*>Leiratkozás<\/a>/);
+  const en = renderEmail({ body: 'Hi', language: 'en' }, { ...BRAND, footerLabels });
+  assert.match(en.html, /<a href="\{unsubscribe_url\}"[^>]*>Unsubscribe<\/a>/);
+});
+
+test('the plain-text part carries the unsubscribe link, in the email language', () => {
+  // Without it a plain-text reader — and every filter scoring that part — sees no way out.
+  const { plainText } = renderEmail(
+    { body: 'Szia', language: 'hu' },
+    { ...BRAND, footerLabels: { hu: { unsubscribe: 'Leiratkozás' } } }
+  );
+  assert.ok(plainText.startsWith('Szia'));
+  assert.ok(plainText.includes('Basket index — https://example.test'));
+  assert.ok(plainText.endsWith('Leiratkozás: {unsubscribe_url}'));
 });

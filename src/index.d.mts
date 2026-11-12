@@ -128,6 +128,8 @@ export function wrapHtml(
   bodyHtml: string,
   opts?: {
     previewText?: string;
+    /** Mautic inserts the preview text itself (from `preheaderText`); emit only the spacer. */
+    preheaderInjected?: boolean;
     brandName?: string;
     brandUrl?: string;
     lang?: string;

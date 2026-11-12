@@ -129,6 +129,14 @@ test('the preheader is hidden and padded', () => {
   assert.ok(html.includes('&zwnj;&nbsp;'.repeat(20)));
 });
 
+test('a Mautic-bound email carries the spacer but not the preview text', () => {
+  // Mautic injects its own preheader div from `preheaderText`; a second copy here made the inbox
+  // snippet read the preview line twice.
+  const { html } = renderEmail({ body: 'Hello', preview: 'the preview' }, BRAND);
+  assert.ok(!html.includes('the preview'));
+  assert.ok(html.includes('&zwnj;&nbsp;'.repeat(20)));
+});
+
 test('no preview text means no empty preheader div', () => {
   assert.ok(!wrapHtml('<p>hi</p>', BRAND).includes('&zwnj;'));
 });

@@ -1,7 +1,7 @@
 {
   "name": "mautic-kit",
-  "version": "0.4.2",
-  "description": "Install, configure and provision Mautic from per-brand declarations. Zero dependencies.",
+  "version": "0.5.0",
+  "description": "Install and configure a self-hosted Mautic (the console steps), plus the CUE schema for declarations. Zero dependencies.",
   "private": true,
   "type": "module",
   "engines": {
@@ -14,12 +14,7 @@
     ".": {
       "types": "./src/index.d.mts",
       "default": "./src/index.mjs"
-    },
-    "./types": {
-      "types": "./src/types.d.mts"
-    },
-    "./html": "./src/html.mjs",
-    "./tokens": "./src/tokens.mjs"
+    }
   },
   "files": [
     "bin",

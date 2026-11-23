@@ -7,7 +7,7 @@
  *
  *   install    the schema, the admin user, config/local.php
  *   configure  the parameters that have no REST API (API on, mailer)
- *   provision  contact fields, tags, segments, pages, emails, campaigns — over REST
+ *   (then growth-kit's crm: contact fields, tags, segments, pages, emails, campaigns — over REST)
  *
  * That is also the order they depend on: there is no API to provision against until the install
  * has run and configure has enabled it.
@@ -136,5 +136,5 @@ export async function install(ctx) {
     const e = /** @type {any} */ (err);
     throw new Error(`${String(e.stdout || '')}\n${String(e.stderr || e.message || e)}`.trim());
   }
-  log('\ndone — now run configure, then provision');
+  log('\ndone — now run configure, then growth-kit crm apply');
 }

@@ -1,4 +1,4 @@
-// The shapes a brand's Mautic declarations must have — the CUE twin of src/types.d.mts.
+// The shapes a brand's Mautic declarations must have — what growth-kit's `crm` reads, checked at `cue vet` time.
 //
 // Import as "github.com/thevitya/mautic-kit/schema" (a brand's build links this directory into
 // cue.mod/pkg). `cue export -e declarations` must produce JSON the engine takes as-is: no renames,

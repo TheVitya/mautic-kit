@@ -1,7 +1,7 @@
 /**
  * Apply Mautic's own PARAMETERS from code — the half of its configuration that has no REST API.
  *
- * provision creates contact fields, tags and segments over HTTP. It cannot touch the settings in
+ * growth-kit's `crm` creates contact fields, tags and segments over HTTP. It cannot touch the settings in
  * `config/local.php`, and those are the ones that decide whether the API answers at all and where
  * mail goes. They are written ONCE, by the installer, from whatever environment happened to exist
  * that day — so an instance installed before a config change keeps the old value forever and
@@ -27,7 +27,7 @@ import { execIn } from './docker.mjs';
  */
 export function baseParameters(env) {
   return {
-    // provision talks to Mautic over the REST API with Basic auth. Both off by default, and both
+    // growth-kit's crm talks to Mautic over the REST API with Basic auth. Both off by default, and both
     // fail in a way that reads like bad credentials rather than a disabled API.
     api_enabled: 1,
     api_enable_basic_auth: 1,

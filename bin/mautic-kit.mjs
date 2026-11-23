@@ -2,8 +2,8 @@
 /**
  *   mautic-kit install   --config ./mautic.config.mjs [--force | --if-needed]
  *   mautic-kit configure --config ./mautic.config.mjs [--check]
- *   mautic-kit provision --config ./mautic.config.mjs [--check]
- *   mautic-kit validate  --config ./mautic.config.mjs            # offline token check
+ *
+ * Provisioning and validation moved to growth-kit (`growth-kit crm validate|plan|apply`).
  */
 import process from 'node:process';
 import { loadConfig, run } from '../src/index.mjs';
@@ -13,7 +13,7 @@ const i = rest.indexOf('--config');
 const configPath = i >= 0 ? rest[i + 1] : process.env.MAUTIC_KIT_CONFIG;
 
 if (!step || !configPath) {
-  console.error('usage: mautic-kit <install|configure|provision|validate> --config <brand config .mjs> [--check|--no-recreate|--force|--if-needed]');
+  console.error('usage: mautic-kit <install|configure> --config <brand config .mjs> [--check|--force|--if-needed]');
   process.exit(2);
 }
 

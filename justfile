@@ -4,7 +4,7 @@
 default:
     @just --list
 
-# Engine, renderer and CUE schema tests (no Mautic, no network)
+# CUE schema tests (no Mautic, no network)
 check:
     npm test
 
